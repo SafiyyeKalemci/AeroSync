@@ -1,0 +1,12 @@
+{
+  "frame_modality": "rgb",
+  "references": [
+    {
+      "object_id": 42,
+      "image_url": "C:/data/references/object-42-thermal.png",
+      "active_from_frame": 100,
+      "active_until_frame": 300,
+      "modality": "thermal"
+    }
+  ]
+}

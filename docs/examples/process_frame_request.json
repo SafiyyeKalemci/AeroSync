@@ -1,0 +1,10 @@
+{
+  "url": "frame-000001",
+  "image_url": "https://competition.example/frames/frame-000001.jpg",
+  "video_name": "flight-alpha",
+  "session": "session-001",
+  "translation_x": null,
+  "translation_y": null,
+  "translation_z": null,
+  "gps_health_status": 0
+}

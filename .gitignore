@@ -1,0 +1,25 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+*.db
+*.db-journal
+dist/
+build/
+*.egg-info/
+
+# Model ağırlıkları kaynağa alınmaz; doğrulanmış harici artifact olarak sağlanır.
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.weights
+work/official_media/
+work/pytest-*/
+work/
+logs/
