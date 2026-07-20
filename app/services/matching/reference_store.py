@@ -325,10 +325,13 @@ class ReferenceStore:
             and reference.active_until_frame < reference.active_from_frame
         ):
             raise ValueError("frame_end, frame_start degerinden kucuk olamaz.")
+        # video_name resmi metadata ucluye (url/image_url/order) dahil edilmez:
+        # uretim sunucusu /reference/ yanitinda bu alani hic gondermez, sadece
+        # /frames/ yanitinda bulunur. Burada opsiyonel bilgi alani olarak
+        # ayrica dogrulanir.
         official_values = (
             reference.official_reference_url,
             reference.image_url,
-            reference.video_name,
             reference.order,
         )
         if any(value is not None for value in official_values):
@@ -337,10 +340,13 @@ class ReferenceStore:
             for field_name, value in (
                 ("official_reference_url", reference.official_reference_url),
                 ("image_url", reference.image_url),
-                ("video_name", reference.video_name),
             ):
                 if not isinstance(value, str) or not value.strip():
                     raise ValueError(f"{field_name} bos olamaz.")
+        if reference.video_name is not None and (
+            not isinstance(reference.video_name, str) or not reference.video_name.strip()
+        ):
+            raise ValueError("video_name verilmisse bos olamaz.")
 
     def _ordered_states(self) -> tuple[ReferenceState, ...]:
         return tuple(

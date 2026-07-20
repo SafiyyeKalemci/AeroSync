@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import Settings, get_settings
+from app.core.logging import configure_logging
 from app.schemas import CompetitionResponse
 from app.services.common import FrameContext
 from app.services.frame_processor import FrameProcessor
@@ -305,6 +306,25 @@ class OfficialCompetitionRunner:
                 await asyncio.to_thread(self.adapter.authenticate)
                 reauthenticated = True
                 continue
+            # Sunucu tahmini icerik nedeniyle reddediyorsa (orn. referans kutusu
+            # sunucunun aralik sinirinin disinda), ayni payload'i tekrar denemek
+            # anlamsizdir ve runner'i oldurur. Referans kutularini atip kareyi
+            # gorev 1+2 sonuclariyla gonder: kare kaybi > tek gorev kaybi.
+            if (
+                status_code is not None
+                and 400 <= int(status_code) < 500
+                and getattr(self.pending.prediction, "reference_predictions", None)
+            ):
+                logger.warning(
+                    "official_prediction_reference_stripped",
+                    extra={
+                        "event": "official_prediction_reference_stripped",
+                        "frame_id": self.pending.frame_id,
+                        "status_code": status_code,
+                    },
+                )
+                self.pending.prediction.reference_predictions = []
+                continue
             logger.warning(
                 "official_prediction_retry",
                 extra={
@@ -361,6 +381,9 @@ async def async_main() -> int:
 
 
 def main() -> int:
+    log_file = configure_logging()
+    if log_file is not None:
+        print(f"Log dosyasi: {log_file}")
     return asyncio.run(async_main())
 
 

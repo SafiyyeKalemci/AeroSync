@@ -1,31 +1,32 @@
 {
-  "source_dir": "C:\\Users\\HP\\Documents\\Codex\\2026-07-13\\al-ma-alan-nda-ayn-projenin\\AeroSync-integrated\\external\\LightGlue",
+  "source_dir": "C:\\Safiyye\\AeroSync-integrated-son\\external\\LightGlue",
   "source_weights": {
     "aliked": {
-      "path": "C:\\Users\\HP\\Documents\\Codex\\2026-07-13\\al-ma-alan-nda-ayn-projenin\\AeroSync-integrated\\external\\LightGlue\\weights\\aliked-n16.pth",
+      "path": "C:\\Safiyye\\AeroSync-integrated-son\\external\\LightGlue\\weights\\aliked-n16.pth",
       "size_bytes": 2738091,
       "sha256": "5be8704840ed662d9d8c561bf7279c222092674e7eb05fd0feab94899e9d82f2"
     },
     "lightglue": {
-      "path": "C:\\Users\\HP\\Documents\\Codex\\2026-07-13\\al-ma-alan-nda-ayn-projenin\\AeroSync-integrated\\external\\LightGlue\\weights\\aliked_lightglue.pth",
+      "path": "C:\\Safiyye\\AeroSync-integrated-son\\external\\LightGlue\\weights\\aliked_lightglue.pth",
       "size_bytes": 47632827,
       "sha256": "d975e965b105311a6143194852297dff4f02aea5cc2e10cecfed966ca0e22503"
     }
   },
   "artifacts": {
     "aliked": {
-      "path": "C:\\Users\\HP\\Documents\\Codex\\2026-07-13\\al-ma-alan-nda-ayn-projenin\\AeroSync-integrated\\models\\matching\\aliked.pt",
-      "size_bytes": 2841241,
-      "sha256": "cf0d2a221517a7029ea27b90848e534f99c4f4bf75a46784d1acea29c93534e7"
+      "path": "C:\\Safiyye\\AeroSync-integrated-son\\models\\matching\\aliked.pt",
+      "size_bytes": 2838165,
+      "sha256": "cc1d8d0a05aa140cfe6ad9bcdc1d051edc7fc49d7a97bc81f9b0725a4d4510f5"
     },
     "lightglue": {
-      "path": "C:\\Users\\HP\\Documents\\Codex\\2026-07-13\\al-ma-alan-nda-ayn-projenin\\AeroSync-integrated\\models\\matching\\lightglue_aliked.pt",
-      "size_bytes": 47966924,
-      "sha256": "1ab0194e893bdfd61db6b6827c6fc7bc307cf765f68e069879869d8cf833397c"
+      "path": "C:\\Safiyye\\AeroSync-integrated-son\\models\\matching\\lightglue_aliked.pt",
+      "size_bytes": 47957644,
+      "sha256": "e2fac0eee7e16503ec9aec3ed7fb82a3ad0ea5be25ea581d579c32e9940743c5"
     }
   },
   "canvas_size": 1120,
   "max_keypoints": 1024,
+  "export_device": "cuda",
   "network_downloads": "DISABLED",
   "prediction_submission": "DISABLED"
 }

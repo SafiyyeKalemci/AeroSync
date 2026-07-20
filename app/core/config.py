@@ -267,6 +267,12 @@ class Settings:
     matching_confidence_weight_reprojection: float
     matching_confidence_weight_visibility: float
     matching_confidence_weight_coverage: float
+    # "pipeline": mevcut DINOv2 tabanli hat; "gorev3": teknofest_gorev3'ten
+    # tasinan kanitlanmis ObjectMatcher (bkz. app/services/matching/gorev3/)
+    matching_engine: str = "pipeline"
+    # gorev3: politika kutu birakmadiysa pencere-ici dusuk esikli (0.30) en iyi
+    # heatmap adayini gonder (asiri bakis acisi farkli referanslar icin)
+    matching_gorev3_window_fallback: bool = True
 
     def validate_detection_motion(self) -> None:
         errors: list[str] = []
@@ -610,6 +616,28 @@ class Settings:
         if errors:
             raise ValueError("; ".join(errors))
 
+    def validate_matching_xoftr(self) -> None:
+        if not self.matching_xoftr_enabled:
+            return
+        errors: list[str] = []
+        if self.matching_xoftr_repo_path is None or not self.matching_xoftr_repo_path.is_dir():
+            errors.append("MATCHING_XOFTR_REPO_PATH mevcut bir klasor olmalidir")
+        if self.matching_xoftr_ckpt_path is None or not self.matching_xoftr_ckpt_path.is_file():
+            errors.append("MATCHING_XOFTR_CKPT_PATH mevcut bir dosya olmalidir")
+        if self.matching_xoftr_device not in {"auto", "cpu", "cuda"}:
+            errors.append("MATCHING_XOFTR_DEVICE auto, cpu veya cuda olmalidir")
+        if self.matching_xoftr_max_edge < 32:
+            errors.append("MATCHING_XOFTR_MAX_EDGE en az 32 olmalidir")
+        if (
+            not math.isfinite(self.matching_xoftr_timeout_seconds)
+            or self.matching_xoftr_timeout_seconds <= 0
+        ):
+            errors.append("MATCHING_XOFTR_TIMEOUT_SECONDS pozitif olmalidir")
+        if self.matching_xoftr_min_inliers < 4:
+            errors.append("MATCHING_XOFTR_MIN_INLIERS en az 4 olmalidir")
+        if errors:
+            raise ValueError("; ".join(errors))
+
     def validate_official_integration(self) -> None:
         missing = [
             name
@@ -834,6 +862,8 @@ def get_settings() -> Settings:
         localization_z_policy=os.getenv("LOCALIZATION_Z_POLICY", "hold_last_valid_z").strip(),
         localization_recovery_min_healthy_frames=_int("LOCALIZATION_RECOVERY_MIN_HEALTHY_FRAMES", 1),
         matching_enabled=_bool("MATCHING_ENABLED", True),
+        matching_engine=os.getenv("MATCHING_ENGINE", "pipeline").strip().lower(),
+        matching_gorev3_window_fallback=_bool("MATCHING_GOREV3_WINDOW_FALLBACK", True),
         matching_timeout_seconds=_float("MATCHING_TIMEOUT_SECONDS", 5.0),
         matching_device=os.getenv("MATCHING_DEVICE", "auto"),
         matching_allow_cpu_fallback=_bool("MATCHING_ALLOW_CPU_FALLBACK", True),

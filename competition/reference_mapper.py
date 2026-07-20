@@ -90,6 +90,17 @@ def _required_text(payload: Mapping[str, Any], field_name: str) -> str:
     return value.strip()
 
 
+def _optional_text(payload: Mapping[str, Any], field_name: str) -> str | None:
+    value = payload.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise OfficialReferenceMappingError(
+            f"{field_name} verilmisse bos olmayan metin olmalidir."
+        )
+    return value.strip()
+
+
 def _frame_bound(payload: Mapping[str, Any], field_name: str, url_field: str) -> int:
     try:
         return parse_frame_index(payload[field_name], field_name)
@@ -101,7 +112,7 @@ def map_official_references(
     payloads: list[dict[str, Any]],
     content_by_reference_url: Mapping[str, bytes],
 ) -> ReferenceCatalog:
-    required = {"url", "image_url", "frame_start", "frame_end", "order", "video_name"}
+    required = {"url", "image_url", "frame_start", "frame_end", "order"}
     validated: list[tuple[int, dict[str, Any]]] = []
     seen_orders: set[int] = set()
     seen_urls: set[str] = set()
@@ -124,7 +135,7 @@ def map_official_references(
             )
         official_url = _required_text(payload, "url")
         _required_text(payload, "image_url")
-        _required_text(payload, "video_name")
+        _optional_text(payload, "video_name")
         order = payload["order"]
         if isinstance(order, bool) or not isinstance(order, int) or order < 0:
             raise OfficialReferenceMappingError("order negatif olmayan tamsayi olmalidir.")
@@ -142,7 +153,7 @@ def map_official_references(
     for object_id, (_, payload) in enumerate(ordered, start=1):
         official_url = _required_text(payload, "url")
         image_url = _required_text(payload, "image_url")
-        video_name = _required_text(payload, "video_name")
+        video_name = _optional_text(payload, "video_name")
         order = int(payload["order"])
         try:
             content = content_by_reference_url[official_url]
@@ -156,6 +167,11 @@ def map_official_references(
             raise OfficialReferenceMappingError(
                 "frame_end, frame_start degerinden kucuk olamaz."
             )
+        # Canli oturum olcumu (2026-07-16): sunucu frame_end id'sindeki kareyi
+        # "outside declared interval" diye REDDEDIYOR -> bitis haric sayilmali.
+        # Bir kare feda etmek, tahminin komple reddedilip runner'in durmasindan iyidir.
+        if active_until > active_from:
+            active_until -= 1
         references.append(
             ReferenceImage(
                 object_id=object_id,

@@ -497,15 +497,19 @@ class YoloDetectionService(DetectionService):
         }
         for index, item in enumerate(detections):
             status = MotionStatus.UNKNOWN
+            if item.cls is ObjectClass.TASIT:
+                # Sartname araclarda 0/1 ister; -1 (unknown) puan yakar. Olcum
+                # yapilamayan durumda stationary varsayilir (araclarin cogu sabit).
+                status = MotionStatus.STATIONARY
             if confident and item.cls is ObjectClass.TASIT:
                 if isinstance(self._motion_analyzer, HomographyAdaptiveMotionAnalyzer):
-                    status = adaptive_statuses.get(index, MotionStatus.UNKNOWN)
+                    status = adaptive_statuses.get(index, MotionStatus.STATIONARY)
                 elif isinstance(self._motion_analyzer, HomographyLocalMotionAnalyzer):
-                    status = local_statuses.get(index, MotionStatus.UNKNOWN)
+                    status = local_statuses.get(index, MotionStatus.STATIONARY)
                 elif isinstance(self._motion_analyzer, HomographyHybridMotionAnalyzer):
-                    status = hybrid_statuses.get(index, MotionStatus.UNKNOWN)
+                    status = hybrid_statuses.get(index, MotionStatus.STATIONARY)
                 elif isinstance(self._motion_analyzer, HomographyBBoxMotionAnalyzer):
-                    status = bbox_statuses.get(index, MotionStatus.UNKNOWN)
+                    status = bbox_statuses.get(index, MotionStatus.STATIONARY)
                 else:
                     status = self._motion_analyzer.classify_vehicle(
                         field,

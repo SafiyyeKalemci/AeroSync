@@ -98,6 +98,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=Path("models/matching"))
     parser.add_argument("--canvas-size", type=int, default=1120)
     parser.add_argument("--max-keypoints", type=int, default=1024)
+    parser.add_argument(
+        "--device",
+        choices=("cpu", "cuda"),
+        default="cpu",
+        help=(
+            "Trace cihazi. torch.jit.trace, tensor ureten bazi islemlerin cihazini "
+            "sabit olarak gomdugunden artifact yalnizca trace edildigi cihazda calisir; "
+            "uretimde CUDA kullanilacaksa cuda ile export edilmelidir."
+        ),
+    )
     return parser
 
 
@@ -109,8 +119,12 @@ def export_artifacts(
     *,
     canvas_size: int = 1024,
     max_keypoints: int = 1024,
+    device: str = "cpu",
 ) -> dict[str, object]:
     import torch
+
+    if device == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA istendi ancak bu makinede kullanilabilir degil.")
 
     source_dir = source_dir.expanduser().resolve()
     aliked_weights = aliked_weights.expanduser().resolve()
@@ -129,8 +143,8 @@ def export_artifacts(
             model_name="aliked-n16",
             max_num_keypoints=max_keypoints,
             detection_threshold=-1.0,
-        ).eval()
-        canvas = torch.rand(1, 3, canvas_size, canvas_size)
+        ).eval().to(device)
+        canvas = torch.rand(1, 3, canvas_size, canvas_size, device=device)
         traced_core = torch.jit.trace(
             CoreWrapper(aliked).eval(), canvas, strict=False, check_trace=False
         )
@@ -138,13 +152,17 @@ def export_artifacts(
             PaddedWrapper(traced_core, canvas_size).eval()
         )
 
-        sample = scripted_aliked(torch.rand(1, 3, canvas_size // 2, canvas_size))
+        sample = scripted_aliked(
+            torch.rand(1, 3, canvas_size // 2, canvas_size, device=device)
+        )
         feature_sample = {
             "keypoints": sample["keypoints"],
             "descriptors": sample["descriptors"],
             "scores": sample["scores"],
             "image_size": torch.tensor(
-                [[float(canvas_size), float(canvas_size // 2)]], dtype=torch.float32
+                [[float(canvas_size), float(canvas_size // 2)]],
+                dtype=torch.float32,
+                device=device,
             ),
         }
         torch.hub.load_state_dict_from_url = lambda *_args, **_kwargs: torch.load(
@@ -155,7 +173,7 @@ def export_artifacts(
             depth_confidence=-1,
             width_confidence=-1,
             flash=False,
-        ).eval()
+        ).eval().to(device)
         traced_lightglue = torch.jit.trace(
             MatcherWrapper(lightglue).eval(),
             (feature_sample, feature_sample),
@@ -181,6 +199,7 @@ def export_artifacts(
         },
         "canvas_size": canvas_size,
         "max_keypoints": max_keypoints,
+        "export_device": device,
         "network_downloads": "DISABLED",
         "prediction_submission": "DISABLED",
     }
@@ -267,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output_dir,
             canvas_size=args.canvas_size,
             max_keypoints=args.max_keypoints,
+            device=args.device,
         )
     except Exception as exc:
         print(f"Task 3 artifact export: FAIL ({type(exc).__name__}: {exc})")

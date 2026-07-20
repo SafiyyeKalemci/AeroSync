@@ -223,7 +223,7 @@ async def test_service_uses_previous_last_result_for_bbox_motion():
     )
     first = FrameContext("f1", "first", "v", "s", None, None, None, None, 0)
     second = FrameContext("f2", "second", "v", "s", None, None, None, None, 1)
-    assert (await service.process_frame(first))[0].motion_status is MotionStatus.UNKNOWN
+    assert (await service.process_frame(first))[0].motion_status is MotionStatus.STATIONARY
     assert (await service.process_frame(second))[0].motion_status is MotionStatus.STATIONARY
 
 

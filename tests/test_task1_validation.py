@@ -146,7 +146,7 @@ async def test_single_frame_uses_production_service_and_reports_all_detections(t
 
 
 @pytest.mark.asyncio
-async def test_first_frame_unknown_second_frame_vehicle_motion(tmp_path):
+async def test_first_frame_stationary_second_frame_vehicle_motion(tmp_path):
     runtime = runtime_with_multiple_detections()
     code, report = await run_validation(
         settings(tmp_path),
@@ -159,7 +159,7 @@ async def test_first_frame_unknown_second_frame_vehicle_motion(tmp_path):
     assert code == EXIT_OK
     first = report["frames"][0]["detections"]
     second = report["frames"][1]["detections"]
-    assert first[0]["motion_status"] == "unknown"
+    assert first[0]["motion_status"] == "stationary"
     assert second[0]["motion_status"] == "moving"
     assert all(item["motion_status"] == "unknown" for item in second[1:])
     assert report["frames"][0]["session_id"] == report["frames"][1]["session_id"]

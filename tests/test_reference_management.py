@@ -120,13 +120,21 @@ def test_frame_index_parse_rejects_ambiguous_url():
 
 @pytest.mark.parametrize(
     "missing",
-    ["url", "image_url", "frame_start", "frame_end", "order", "video_name"],
+    ["url", "image_url", "frame_start", "frame_end", "order"],
 )
 def test_official_metadata_validation_rejects_missing_fields(missing):
     item = payload()
     item.pop(missing)
     with pytest.raises(OfficialReferenceMappingError):
         map_official_references([item], {"/references/a/": image_bytes()})
+
+
+def test_official_reference_video_name_is_optional():
+    """Uretim sunucusu /reference/ yanitinda video_name alanini hic gondermez."""
+    item = payload()
+    item.pop("video_name")
+    catalog = map_official_references([item], {"/references/a/": image_bytes()})
+    assert catalog.references[0].video_name is None
 
 
 def test_url_frame_bounds_are_parsed_to_numeric_inclusive_window():
@@ -158,6 +166,31 @@ def test_official_object_id_url_order_and_video_are_preserved():
     assert first.order == 2
     assert first.video_name == "video-a"
     assert catalog.official_url_for(1) == "/references/first/"
+
+
+@pytest.mark.asyncio
+async def test_production_reference_without_video_name_is_accepted_end_to_end():
+    """Regresyon: uretim sunucusu /reference/ yanitinda video_name gondermez
+    (bkz. test_official_reference_video_name_is_optional). Mapper bunu None'a
+    esler, ancak ReferenceStore._validate_reference video_name'i resmi metadata
+    ucluye (url/image_url/order) dahil edip "hepsi birlikte" kuralina tabi
+    tutuyorsa tum referanslar toplu reddedilir ve Gorev 3 hic calismaz. Bu test
+    mapper + store + servis katmanlarinin tamamini birlikte calistirir."""
+    service = DinoReferenceMatchingService(settings())
+    official_style_reference = ReferenceImage(
+        object_id=1,
+        content=image_bytes(),
+        active_from_frame=10,
+        active_until_frame=20,
+        modality=ImageModality.RGB,
+        official_reference_url="/reference/1/",
+        order=1,
+        image_url="/media/reference-1.png",
+        video_name=None,
+    )
+    loaded = await service.set_references("s", [official_style_reference])
+    assert loaded == 1
+    assert await service.active_reference_ids("s", 15) == (1,)
 
 
 @pytest.mark.asyncio

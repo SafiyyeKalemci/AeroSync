@@ -511,16 +511,28 @@ def _check_tasks(report: Report, settings: Settings, skip_models: bool) -> None:
         and settings.matching_local_refinement_enabled
         and settings.matching_geometry_method in {"hybrid", "aliked_lightglue"}
     )
+    xoftr_required = bool(settings.matching_enabled and settings.matching_xoftr_enabled)
     artifacts = (
         ("ALIKED", settings.matching_aliked_model_path, local_required),
         ("LightGlue", settings.matching_lightglue_model_path, local_required),
-        ("XoFTR", settings.matching_xoftr_model_path, False),
+        ("XoFTR TorchScript (legacy)", settings.matching_xoftr_model_path, False),
+        ("XoFTR checkpoint", settings.matching_xoftr_ckpt_path, xoftr_required),
     )
     for name, path, required in artifacts:
         if skip_models:
             report.add("Task 3 Matching", name, Status.SKIPPED, "--skip-models")
         else:
             _artifact_check(report, "Task 3 Matching", name, path, required)
+    xoftr_repo_ok = bool(
+        settings.matching_xoftr_repo_path and settings.matching_xoftr_repo_path.is_dir()
+    )
+    report.add(
+        "Task 3 Matching", "XoFTR local repository",
+        Status.OK if xoftr_repo_ok else (Status.FAIL if xoftr_required else Status.WARNING),
+        "local directory ready" if xoftr_repo_ok else "local repository missing",
+        exit_code=EXIT_ARTIFACT if xoftr_required and not xoftr_repo_ok else None,
+        path=str(settings.matching_xoftr_repo_path) if settings.matching_xoftr_repo_path else "not configured",
+    )
     report.add(
         "Task 3 Matching",
         "geometry method",
@@ -552,7 +564,13 @@ def _check_tasks(report: Report, settings: Settings, skip_models: bool) -> None:
         if settings.matching_enabled and settings.matching_dinov2_enabled
         else "pipeline implemented but disabled by configuration",
     )
-    report.add("Task 3 Matching", "thermal pipeline", Status.SKIPPED, "not critical for online RGB simulation")
+    report.add(
+        "Task 3 Matching", "thermal pipeline",
+        Status.OK if xoftr_required else Status.WARNING,
+        "XoFTR cross-modal path enabled (thermal reference -> RGB frame)"
+        if xoftr_required
+        else "disabled; thermal references will be skipped",
+    )
     cache = report.project_root / "work" / "reference_cache"
     try:
         cache.mkdir(parents=True, exist_ok=True)

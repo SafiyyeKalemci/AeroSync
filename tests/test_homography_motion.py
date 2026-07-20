@@ -111,8 +111,10 @@ def test_camera_transform_is_compensated_and_stationary(matrix):
 
 
 def test_real_vehicle_residual_is_moving():
+    # Analizör yarışma için sabitlenmiş eşik kullanır (residual_threshold_px=4.0)
+    # ve 30px kutuda dinamik eşik 4.0 + sqrt(30)*0.25 ≈ 5.37'dir; 6.0 > 5.37.
     matrix = np.eye(3, dtype=np.float64)
-    analyzer = _analyzer(matrix, motion=5.0)
+    analyzer = _analyzer(matrix, motion=6.0)
     computation = analyzer.analyze_pair(
         np.zeros((100, 100), np.uint8),
         np.ones((100, 100), np.uint8),
@@ -120,10 +122,12 @@ def test_real_vehicle_residual_is_moving():
     )
     measurement = analyzer.measure_vehicle(computation.field, (30, 30, 60, 60))
     assert measurement.status is MotionStatus.MOVING
-    assert measurement.residual_motion_magnitude == pytest.approx(5.0)
+    assert measurement.residual_motion_magnitude == pytest.approx(6.0)
 
 
-def test_insufficient_features_returns_unknown_without_fake_motion():
+def test_insufficient_features_returns_stationary_without_fake_motion():
+    # Şartname araçlarda 0/1 ister; ölçüm yapılamayan karede -1 (unknown) puan
+    # yakar. Analizör bu yüzden ölçülemeyen aracı stationary olarak raporlar.
     analyzer = HomographyMotionAnalyzer(
         min_features=8,
         min_inliers=6,
@@ -142,7 +146,7 @@ def test_insufficient_features_returns_unknown_without_fake_motion():
     )
     assert computation.field is None
     assert computation.diagnostics.reason == "insufficient_features"
-    assert analyzer.classify_vehicle(None, (30, 30, 60, 60)) is MotionStatus.UNKNOWN
+    assert analyzer.classify_vehicle(None, (30, 30, 60, 60)) is MotionStatus.STATIONARY
 
 
 def test_bad_homography_returns_unknown():
@@ -185,12 +189,13 @@ def _service(images: dict[str, np.ndarray], settings=None) -> YoloDetectionServi
 
 
 @pytest.mark.asyncio
-async def test_first_frame_and_duplicate_are_unknown_and_cached():
+async def test_first_frame_and_duplicate_are_stationary_and_cached():
+    # Sartname araclarda 0/1 ister; olculemeyen ilk kare stationary gonderilir.
     image = np.zeros((100, 100, 3), np.uint8)
     service = _service({"a": image})
     first = await service.process_frame(_frame("f1", 0, "a"))
     duplicate = await service.process_frame(_frame("f1", 0, "a"))
-    assert first[0].motion_status is MotionStatus.UNKNOWN
+    assert first[0].motion_status is MotionStatus.STATIONARY
     assert duplicate == first
     assert service._runtime.calls == 1
 
@@ -204,7 +209,7 @@ async def test_first_frame_and_duplicate_are_unknown_and_cached():
     ],
     ids=["frame_gap", "video_change"],
 )
-async def test_discontinuity_returns_unknown(second):
+async def test_discontinuity_returns_stationary(second):
     images = {
         "a": np.zeros((100, 100, 3), np.uint8),
         "b": np.ones((100, 100, 3), np.uint8),
@@ -212,11 +217,11 @@ async def test_discontinuity_returns_unknown(second):
     service = _service(images)
     await service.process_frame(_frame("f1", 0, "a"))
     result = await service.process_frame(second)
-    assert result[0].motion_status is MotionStatus.UNKNOWN
+    assert result[0].motion_status is MotionStatus.STATIONARY
 
 
 @pytest.mark.asyncio
-async def test_resolution_change_returns_unknown():
+async def test_resolution_change_returns_stationary():
     service = _service(
         {
             "a": np.zeros((100, 100, 3), np.uint8),
@@ -225,7 +230,7 @@ async def test_resolution_change_returns_unknown():
     )
     await service.process_frame(_frame("f1", 0, "a"))
     result = await service.process_frame(_frame("f2", 1, "b"))
-    assert result[0].motion_status is MotionStatus.UNKNOWN
+    assert result[0].motion_status is MotionStatus.STATIONARY
 
 
 def test_default_and_explicit_motion_analyzer_selection():

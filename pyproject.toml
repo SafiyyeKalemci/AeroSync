@@ -23,6 +23,11 @@ dependencies = [
 [project.optional-dependencies]
 matching = [
   "torch>=2.2,<3.0",
+  "torchvision>=0.17,<1.0",
+  "yacs>=0.1.8,<1.0",
+  "kornia>=0.7,<1.0",
+  "einops>=0.7,<1.0",
+  "loguru>=0.7,<1.0",
 ]
 test = [
   "pytest>=8,<10",

@@ -107,11 +107,12 @@ def service(images, boxes, flow_factory, **setting_changes):
 
 
 @pytest.mark.asyncio
-async def test_first_frame_vehicle_is_unknown():
+async def test_first_frame_vehicle_is_stationary():
+    # Sartname araclarda 0/1 ister; olculemeyen kare stationary gonderilir.
     flow = FlowFactory()
     detection = service({"image-1": np.zeros((100, 100, 3), np.uint8)}, [yolo_box(0, [20, 20, 40, 40])], flow)
     result = await detection.process_frame(frame())
-    assert result[0].motion_status is MotionStatus.UNKNOWN
+    assert result[0].motion_status is MotionStatus.STATIONARY
     assert flow.calls == 0
 
 
@@ -171,9 +172,9 @@ async def test_sessions_are_isolated_and_resettable():
     first_b = await detection.process_frame(frame(session="b"))
     await detection.reset_session("a")
     after_reset = await detection.process_frame(frame("f2", 2, session="a", source="image-2"))
-    assert first_a[0].motion_status is MotionStatus.UNKNOWN
-    assert first_b[0].motion_status is MotionStatus.UNKNOWN
-    assert after_reset[0].motion_status is MotionStatus.UNKNOWN
+    assert first_a[0].motion_status is MotionStatus.STATIONARY
+    assert first_b[0].motion_status is MotionStatus.STATIONARY
+    assert after_reset[0].motion_status is MotionStatus.STATIONARY
     assert flow.calls == 0
 
 
@@ -191,7 +192,7 @@ async def test_video_change_out_of_order_and_large_gap_reset_baseline(second):
     detection = service({"image-1": np.zeros((100, 100, 3), np.uint8), "image-2": np.ones((100, 100, 3), np.uint8)}, [yolo_box(0, [20, 20, 40, 40])], flow)
     await detection.process_frame(frame())
     result = await detection.process_frame(second)
-    assert result[0].motion_status is MotionStatus.UNKNOWN
+    assert result[0].motion_status is MotionStatus.STATIONARY
     assert flow.calls == 0
 
 
@@ -201,7 +202,7 @@ async def test_shape_change_resets_baseline():
     detection = service({"image-1": np.zeros((100, 100, 3), np.uint8), "image-2": np.ones((80, 120, 3), np.uint8)}, [yolo_box(0, [20, 20, 40, 40])], flow)
     await detection.process_frame(frame())
     result = await detection.process_frame(frame("f2", 2, source="image-2"))
-    assert result[0].motion_status is MotionStatus.UNKNOWN
+    assert result[0].motion_status is MotionStatus.STATIONARY
     assert flow.calls == 0
 
 
@@ -240,18 +241,18 @@ async def test_corrupt_frame_does_not_replace_previous_state():
 
 
 @pytest.mark.asyncio
-async def test_freeze_detection_returns_unknown_without_flow():
+async def test_freeze_detection_returns_stationary_without_flow():
     flow = FlowFactory([(20, 20, 40, 40)])
     same = np.zeros((100, 100, 3), np.uint8)
     detection = service({"image-1": same, "image-2": same}, [yolo_box(0, [20, 20, 40, 40])], flow)
     await detection.process_frame(frame())
     result = await detection.process_frame(frame("f2", 2, source="image-2"))
-    assert result[0].motion_status is MotionStatus.UNKNOWN
+    assert result[0].motion_status is MotionStatus.STATIONARY
     assert flow.calls == 0
 
 
 @pytest.mark.asyncio
-async def test_warmup_frames_keep_motion_unknown_until_ready():
+async def test_warmup_frames_keep_motion_stationary_until_ready():
     flow = FlowFactory([(20, 20, 40, 40)])
     images = {
         "image-1": np.zeros((100, 100, 3), np.uint8),
@@ -262,8 +263,8 @@ async def test_warmup_frames_keep_motion_unknown_until_ready():
     first = await detection.process_frame(frame())
     second = await detection.process_frame(frame("f2", 2, source="image-2"))
     third = await detection.process_frame(frame("f3", 3, source="image-3"))
-    assert first[0].motion_status is MotionStatus.UNKNOWN
-    assert second[0].motion_status is MotionStatus.UNKNOWN
+    assert first[0].motion_status is MotionStatus.STATIONARY
+    assert second[0].motion_status is MotionStatus.STATIONARY
     assert third[0].motion_status is MotionStatus.MOVING
     assert flow.calls == 2
 

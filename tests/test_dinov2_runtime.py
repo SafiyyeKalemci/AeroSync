@@ -179,14 +179,16 @@ def test_missing_local_repository_fails_without_calling_loader(tmp_path):
     assert loads == []
 
 
-def test_cuda_request_falls_back_to_cpu_when_allowed(tmp_path):
+def test_cuda_request_falls_back_to_cpu_when_allowed(tmp_path, monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     subject, _, loads = runtime(tmp_path, matching_dinov2_device="cuda",
                                 matching_dinov2_allow_cpu_fallback=True)
     subject.extract(image(), "hash")
     assert loads[0][3] == "cpu"
 
 
-def test_cuda_request_fails_when_cpu_fallback_is_disabled(tmp_path):
+def test_cuda_request_fails_when_cpu_fallback_is_disabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     subject, _, loads = runtime(tmp_path, matching_dinov2_device="cuda",
                                 matching_dinov2_allow_cpu_fallback=False)
     with pytest.raises(Dinov2ConfigurationError):
@@ -487,7 +489,7 @@ def test_preflight_treats_dinov2_as_required_and_other_matchers_as_optional(tmp_
     assert len(task3["DINOv2 weights"].details["sha256_short"]) == 12
     assert task3["ALIKED"].status is Status.WARNING
     assert task3["LightGlue"].status is Status.WARNING
-    assert task3["XoFTR"].status is Status.WARNING
+    assert task3["XoFTR TorchScript (legacy)"].status is Status.WARNING
 
 
 def test_preflight_fails_when_required_dinov2_artifacts_are_missing(tmp_path):

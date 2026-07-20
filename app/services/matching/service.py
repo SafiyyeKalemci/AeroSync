@@ -16,7 +16,11 @@ from app.services.matching.interface import (
     ReferenceMatchingService,
     ReferenceStateInfo,
 )
-from app.services.matching.pipeline import ModalityDetector
+from app.services.matching.pipeline import BoundingBoxValidator, ModalityDetector
+from app.services.matching.xoftr_crossmodal import (
+    XoFTRRuntimeRegistry,
+    XoFTRUnavailable,
+)
 from app.services.matching.coarse_matcher import CoarseMatchingPipeline
 from app.services.matching.dinov2_runtime import (
     Dinov2ConfigurationError,
@@ -76,6 +80,7 @@ class DinoReferenceMatchingService(ReferenceMatchingService):
         matching_pipeline: CoarseMatchingPipeline | None = None,
         local_pipeline: LocalRefinementPipeline | None = None,
         warmup_service: MatchingWarmupService | None = None,
+        xoftr_factory: Callable[[Settings], object] = XoFTRRuntimeRegistry.get,
     ) -> None:
         if settings.matching_reference_ttl_seconds <= 0:
             raise ValueError("MATCHING_REFERENCE_TTL_SECONDS pozitif olmalidir.")
@@ -94,6 +99,9 @@ class DinoReferenceMatchingService(ReferenceMatchingService):
         if local_pipeline is None and settings.matching_geometry_method != "dinov2":
             self._local_pipeline = LocalRefinementPipeline(settings)
         self._warmup_service = warmup_service or MatchingWarmupService(settings)
+        settings.validate_matching_xoftr()
+        self._xoftr_factory = xoftr_factory
+        self._bbox_validator = BoundingBoxValidator(settings)
         self._sessions: dict[str, _SessionState] = {}
         self._last_match_diagnostics: dict[str, dict[int, dict[str, object]]] = {}
         self._registry_lock = asyncio.Lock()
@@ -152,7 +160,18 @@ class DinoReferenceMatchingService(ReferenceMatchingService):
             return []
         self._last_match_diagnostics[frame.session_id] = {}
         active = await state.reference_store.active_for_frame(frame.frame_index)
-        active = tuple(reference for reference in active if reference.modality is ImageModality.RGB)
+        rgb_active = tuple(
+            reference for reference in active if reference.modality is ImageModality.RGB
+        )
+        thermal_active = (
+            tuple(
+                reference
+                for reference in active
+                if reference.modality is ImageModality.THERMAL
+            )
+            if self._settings.matching_xoftr_enabled
+            else ()
+        )
         logger.info(
             "matching_active_references_resolved",
             extra={
@@ -160,18 +179,17 @@ class DinoReferenceMatchingService(ReferenceMatchingService):
                 "session_id": frame.session_id,
                 "frame_id": frame.frame_id,
                 "frame_index": frame.frame_index,
-                "active_reference_count": len(active),
+                "active_reference_count": len(rgb_active),
+                "thermal_reference_count": len(thermal_active),
                 "descriptor_runtime_enabled": self._settings.matching_dinov2_enabled,
+                "xoftr_enabled": self._settings.matching_xoftr_enabled,
             },
         )
-        if not active or not self._settings.matching_dinov2_enabled:
+        run_dinov2 = bool(rgb_active) and self._settings.matching_dinov2_enabled
+        if not run_dinov2 and not thermal_active:
             return []
         if frame.image_modality is ImageModality.THERMAL:
             return []
-
-        runtime = self._runtime_factory(self._settings)
-        for reference in active:
-            await self._ensure_reference_descriptor(state.reference_store, reference.object_id, runtime)
 
         try:
             content = await self._image_reader(
@@ -180,16 +198,69 @@ class DinoReferenceMatchingService(ReferenceMatchingService):
             )
             detect_image_format(content)
             image = await asyncio.to_thread(self._decode_image, content, "Frame")
-            frame_modality = frame.image_modality or self._modality_detector.detect(image)
-            if frame_modality is not ImageModality.RGB:
-                logger.info(
-                    "matching_frame_completed",
-                    extra={"event": "matching_frame_completed", "session_id": frame.session_id,
-                           "frame_id": frame.frame_id, "result_count": 0,
-                           "reason": "rgb_only_stage"},
-                )
+        except (asyncio.TimeoutError, ValueError, OSError):
+            logger.error(
+                "matching_frame_decode_failed",
+                extra={"event": "matching_frame_decode_failed", "session_id": frame.session_id,
+                       "frame_id": frame.frame_id},
+                exc_info=True,
+            )
+            return []
+        frame_modality = frame.image_modality or self._modality_detector.detect(image)
+        if frame_modality is not ImageModality.RGB:
+            logger.info(
+                "matching_frame_completed",
+                extra={"event": "matching_frame_completed", "session_id": frame.session_id,
+                       "frame_id": frame.frame_id, "result_count": 0,
+                       "reason": "rgb_only_stage"},
+            )
+            return []
+        source_hash = hashlib.sha256(content).hexdigest()
+
+        matching_generation = await state.reference_store.generation_token()
+        results: dict[int, MatchedReferenceObject] = {}
+
+        if run_dinov2:
+            dinov2_results = await self._match_rgb_references(
+                state, frame, rgb_active, image, source_hash, matching_generation
+            )
+            if dinov2_results is None:
                 return []
-            source_hash = hashlib.sha256(content).hexdigest()
+            results.update(dinov2_results)
+
+        if thermal_active:
+            thermal_results = await self._match_thermal_references(
+                state, frame, thermal_active, image, matching_generation
+            )
+            if thermal_results is None:
+                return []
+            results.update(thermal_results)
+
+        if await state.reference_store.generation_token() != matching_generation:
+            return []
+        ordered = [results[reference.object_id] for reference in active if reference.object_id in results]
+        logger.info(
+            "matching_frame_completed",
+            extra={"event": "matching_frame_completed", "session_id": frame.session_id,
+                   "frame_id": frame.frame_id, "result_count": len(ordered)},
+        )
+        return ordered
+
+    async def _match_rgb_references(
+        self,
+        state: _SessionState,
+        frame: FrameContext,
+        rgb_active,
+        image,
+        source_hash: str,
+        matching_generation: object,
+    ) -> dict[int, MatchedReferenceObject] | None:
+        """DINOv2/hybrid yolu; None donusu oturum jenerasyonu degisti demektir."""
+        runtime = self._runtime_factory(self._settings)
+        for reference in rgb_active:
+            await self._ensure_reference_descriptor(state.reference_store, reference.object_id, runtime)
+
+        try:
             frame_descriptor, metrics = await asyncio.wait_for(
                 asyncio.to_thread(runtime.extract, image, source_hash),
                 timeout=self._settings.matching_dinov2_timeout_seconds,
@@ -211,7 +282,7 @@ class DinoReferenceMatchingService(ReferenceMatchingService):
                 extra={"event": "matching_dinov2_timeout", "source": "frame", "session_id": frame.session_id,
                        "frame_id": frame.frame_id},
             )
-            return []
+            return {}
         except (Dinov2ConfigurationError, Dinov2DescriptorError, ValueError, OSError):
             logger.error(
                 "matching_frame_descriptor_failed",
@@ -219,12 +290,11 @@ class DinoReferenceMatchingService(ReferenceMatchingService):
                        "frame_id": frame.frame_id},
                 exc_info=True,
             )
-            return []
+            return {}
 
-        matching_generation = await state.reference_store.generation_token()
         results: dict[int, MatchedReferenceObject] = {}
         timeout, timeout_stage = self._reference_match_timeout()
-        for reference in active:
+        for reference in rgb_active:
             current, generation = await state.reference_store.descriptor_snapshot(reference.object_id)
             if generation != matching_generation:
                 logger.info(
@@ -232,7 +302,7 @@ class DinoReferenceMatchingService(ReferenceMatchingService):
                     extra={"event": "matching_reference_failed", "session_id": frame.session_id,
                            "object_id": reference.object_id, "reason": "session_generation_changed"},
                 )
-                return []
+                return None
             if current is None or not current.descriptor_ready or current.dense_descriptors is None:
                 continue
             matching_started = self._clock()
@@ -318,20 +388,117 @@ class DinoReferenceMatchingService(ReferenceMatchingService):
                 "matched" if matched is not None else "rejected",
             )
             if await state.reference_store.generation_token() != matching_generation:
-                return []
+                return None
             if matched is not None:
                 previous = results.get(reference.object_id)
                 if previous is None or (matched.confidence or 0.0) > (previous.confidence or 0.0):
                     results[reference.object_id] = matched
-        if await state.reference_store.generation_token() != matching_generation:
-            return []
-        ordered = [results[reference.object_id] for reference in active if reference.object_id in results]
-        logger.info(
-            "matching_frame_completed",
-            extra={"event": "matching_frame_completed", "session_id": frame.session_id,
-                   "frame_id": frame.frame_id, "result_count": len(ordered)},
-        )
-        return ordered
+        return results
+
+    async def _match_thermal_references(
+        self,
+        state: _SessionState,
+        frame: FrameContext,
+        thermal_active,
+        frame_image,
+        matching_generation: object,
+    ) -> dict[int, MatchedReferenceObject] | None:
+        """Termal referanslari XoFTR capraz-modal yolu ile RGB frame uzerinde eslestirir.
+
+        None donusu oturum jenerasyonunun degistigini bildirir; bos sozluk
+        guvenli "eslesme yok" sonucudur.
+        """
+        try:
+            matcher = self._xoftr_factory(self._settings)
+        except (XoFTRUnavailable, ValueError):
+            logger.error(
+                "matching_xoftr_unavailable",
+                extra={"event": "matching_xoftr_unavailable", "session_id": frame.session_id,
+                       "frame_id": frame.frame_id},
+                exc_info=True,
+            )
+            return {}
+        frame_height, frame_width = frame_image.shape[:2]
+        timeout = self._settings.matching_xoftr_timeout_seconds
+        results: dict[int, MatchedReferenceObject] = {}
+        for reference in thermal_active:
+            current, generation = await state.reference_store.descriptor_snapshot(
+                reference.object_id
+            )
+            if generation != matching_generation:
+                logger.info(
+                    "matching_reference_failed",
+                    extra={"event": "matching_reference_failed", "session_id": frame.session_id,
+                           "object_id": reference.object_id, "reason": "session_generation_changed"},
+                )
+                return None
+            if current is None:
+                continue
+            matching_started = self._clock()
+            try:
+                reference_image = await asyncio.to_thread(
+                    self._decode_image, current.image_content, "Referans"
+                )
+                raw_box = await asyncio.wait_for(
+                    asyncio.to_thread(matcher.bbox, reference_image, frame_image),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                self._record_match_diagnostic(
+                    frame, reference.object_id, "xoftr_thermal", timeout,
+                    max(0.0, self._clock() - matching_started), "timeout",
+                )
+                logger.error(
+                    "matching_reference_failed",
+                    extra={"event": "matching_reference_failed", "session_id": frame.session_id,
+                           "object_id": reference.object_id, "reason": "xoftr_timeout"},
+                )
+                continue
+            except XoFTRUnavailable:
+                logger.error(
+                    "matching_xoftr_unavailable",
+                    extra={"event": "matching_xoftr_unavailable", "session_id": frame.session_id,
+                           "frame_id": frame.frame_id},
+                    exc_info=True,
+                )
+                return results
+            except Exception as exc:
+                self._record_match_diagnostic(
+                    frame, reference.object_id, "xoftr_thermal", timeout,
+                    max(0.0, self._clock() - matching_started), type(exc).__name__,
+                )
+                logger.error(
+                    "matching_reference_failed",
+                    extra={"event": "matching_reference_failed", "session_id": frame.session_id,
+                           "object_id": reference.object_id, "reason": type(exc).__name__},
+                    exc_info=True,
+                )
+                continue
+            matched = self._bbox_validator.validate(
+                object_id=reference.object_id,
+                raw_box=raw_box,
+                image_width=frame_width,
+                image_height=frame_height,
+            )
+            self._record_match_diagnostic(
+                frame, reference.object_id, "xoftr_thermal", timeout,
+                max(0.0, self._clock() - matching_started),
+                "matched" if matched is not None else "rejected",
+            )
+            if matched is not None:
+                results[reference.object_id] = matched
+                logger.info(
+                    "matching_xoftr_reference_matched",
+                    extra={
+                        "event": "matching_xoftr_reference_matched",
+                        "session_id": frame.session_id,
+                        "frame_id": frame.frame_id,
+                        "object_id": reference.object_id,
+                        "inliers": raw_box.get("inliers") if isinstance(raw_box, dict) else None,
+                        "angle": raw_box.get("angle") if isinstance(raw_box, dict) else None,
+                    },
+                )
+        return results
 
     def _record_match_diagnostic(
         self,

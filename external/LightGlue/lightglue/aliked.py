@@ -327,7 +327,10 @@ class DeformableConv2d(nn.Module):
 
     def forward(self, x):
         h, w = x.shape[2:]
-        max_offset = max(h, w) / 4.0
+        # int(): torch.jit.trace altinda boyutlar tensor olarak izlenir ve
+        # clamp'e CPU tensoru sinir olarak girip artifact'i cihaza kilitler;
+        # Python skalarina cevirmek clamp'i cihazdan bagimsiz yapar.
+        max_offset = float(max(int(h), int(w))) / 4.0
 
         out = self.offset_conv(x)
         if self.mask:
@@ -536,7 +539,9 @@ class SDDH(nn.Module):
         # keypoints: list, [[N_kpts,2], ...] (w,h)
         b, c, h, w = x.shape
         wh = torch.tensor([[w - 1, h - 1]], device=x.device)
-        max_offset = max(h, w) / 4.0
+        # int(): trace sirasinda clamp sinirinin CPU tensoru olarak gomulmesini
+        # onler (cihazdan bagimsiz skaler sinir).
+        max_offset = float(max(int(h), int(w))) / 4.0
 
         offsets = []
         descriptors = []

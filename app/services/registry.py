@@ -50,6 +50,13 @@ def build_services(settings: Settings) -> ServiceRegistry:
         localization: LocalizationService = AffineLocalizationService(settings)
     else:
         localization = DisabledLocalizationService()
+    if settings.matching_engine == "gorev3":
+        from app.services.matching.gorev3_service import Gorev3MatchingService
+
+        matching: ReferenceMatchingService = Gorev3MatchingService(settings)
+        logger.info("matching_engine_selected", extra={"engine": "gorev3"})
+    else:
+        matching = DinoReferenceMatchingService(settings)
     return ServiceRegistry(
         detection=detection,
         localization=localization,
@@ -57,5 +64,5 @@ def build_services(settings: Settings) -> ServiceRegistry:
             ttl_seconds=settings.localization_session_ttl_seconds,
             max_sessions=settings.localization_max_sessions,
         ),
-        matching=DinoReferenceMatchingService(settings),
+        matching=matching,
     )

@@ -235,6 +235,29 @@ def test_null_translation_maps_without_fabricated_coordinates(tmp_path):
     assert request.translation_z is None
 
 
+def test_unhealthy_gps_nan_string_translation_maps_to_none(tmp_path):
+    """Sunucu health_status=0 iken translation_x/y/z icin "NaN" stringi gonderir
+    (bkz. teknik sartname Sekil 16 ornegi). Bu, ground truth yok demektir ve
+    None'a eslenmelidir; ham stringin oldugu gibi gecmesi Pydantic'te crash'e
+    yol acar (FiniteFloat NaN kabul etmez)."""
+    request = map_official_frame(
+        {"url": "/frames/450/", "image_url": "/media/f450.webp", "video_name": "v1"},
+        {
+            "health_status": 0,
+            "translation_x": "NaN",
+            "translation_y": "NaN",
+            "translation_z": "NaN",
+        },
+        session_id="test-session",
+        frame_index=449,
+        local_image_path=tmp_path / "f450.webp",
+    )
+    assert request.gps_health_status == 0
+    assert request.translation_x is None
+    assert request.translation_y is None
+    assert request.translation_z is None
+
+
 def test_unexpected_health_status_is_rejected(tmp_path):
     with pytest.raises(OfficialFrameMappingError):
         map_official_frame(

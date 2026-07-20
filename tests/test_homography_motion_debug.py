@@ -58,8 +58,10 @@ def _analyzer(settings, *, valid=True):
         return np.eye(3), np.ones((len(previous), 1), np.uint8)
 
     def flow(_previous, current):
+        # 30px kutuda sabitlenmiş dinamik eşik ≈ 5.37 (4.0 + sqrt(30)*0.25);
+        # 6.0 bunun üstünde kalır ve "moving" beklentisini korur.
         result = np.zeros((*current.shape, 2), np.float32)
-        result[30:60, 30:60, 0] = 5.0
+        result[30:60, 30:60, 0] = 6.0
         return result
 
     return HomographyMotionAnalyzer(
@@ -152,13 +154,17 @@ async def test_residual_statistics_are_finite(tmp_path):
         "residual_flow_magnitude_max",
     ):
         assert math.isfinite(vehicle[key])
-    assert vehicle["residual_median_x"] == pytest.approx(5.0)
-    assert vehicle["residual_magnitude_px"] == pytest.approx(5.0)
-    assert vehicle["valid_residual_pixel_count"] == 900
+    assert vehicle["residual_median_x"] == pytest.approx(6.0)
+    assert vehicle["residual_magnitude_px"] == pytest.approx(6.0)
+    # Analizör yarışma sabiti inner_crop_ratio=0.10 kullanır: 30px kutu her
+    # kenardan 3px kırpılır -> 24x24 = 576 gecerli piksel.
+    assert vehicle["valid_residual_pixel_count"] == 576
 
 
 @pytest.mark.asyncio
-async def test_invalid_homography_is_safe_unknown(tmp_path):
+async def test_invalid_homography_is_safe_stationary(tmp_path):
+    # Homografi kurulamayan karede araç -1 (unknown) yerine stationary gider:
+    # şartname araçlarda 0/1 ister, -1 puan yakar.
     settings = _settings()
     previous, current = _images(tmp_path)
     output = tmp_path / "invalid"
@@ -170,7 +176,7 @@ async def test_invalid_homography_is_safe_unknown(tmp_path):
         emit=lambda _: None,
     )
     assert report["homography"]["valid"] is False
-    assert report["vehicles"][0]["motion_result"] == "unknown"
+    assert report["vehicles"][0]["motion_result"] == "stationary"
     assert report["vehicles"][0]["residual_magnitude_px"] is None
     assert (output / "homography_motion_debug.json").is_file()
     assert (output / "residual_flow_heatmap.jpg").is_file()

@@ -333,12 +333,18 @@ def test_hybrid_diagnostic_and_production_service_use_same_result_without_stale_
 def test_local_timeout_does_not_fallback_and_is_reported_as_root_cause(
     evaluation_dataset, tmp_path
 ):
+    # 0.05s timeout / 0.2s pipeline delay: on Windows the default asyncio
+    # ProactorEventLoop has ~15.6ms timer granularity, so sub-15ms timeouts (e.g.
+    # the previous 0.01s) can fire before any measurable wall time passes,
+    # making elapsed read back as 0.0. These values stay comfortably above that
+    # floor so the timeout reliably fires with a measurable elapsed duration on
+    # both Windows and Linux.
     references, frames, _, runtime = evaluation_dataset
     report = asyncio.run(
         run_evaluation(
             _settings(
                 matching_geometry_method="hybrid",
-                matching_local_refinement_timeout_sec=0.01,
+                matching_local_refinement_timeout_sec=0.05,
                 matching_coarse_timeout_seconds=10.0,
                 matching_reference_timeout_seconds=20.0,
             ),
@@ -348,7 +354,7 @@ def test_local_timeout_does_not_fallback_and_is_reported_as_root_cause(
                 frame=frames / "frame_001.png",
             ),
             runtime_factory=lambda _settings: runtime,
-            local_pipeline_factory=lambda _settings: AcceptedLocalPipeline(0.05),
+            local_pipeline_factory=lambda _settings: AcceptedLocalPipeline(0.2),
             emit=lambda _message: None,
         )
     )
@@ -358,8 +364,8 @@ def test_local_timeout_does_not_fallback_and_is_reported_as_root_cause(
     assert row["local_refinement_timeout_triggered"] is True
     assert row["service_match_outcome"] == "timeout"
     assert row["service_timeout_stage"] == "local_refinement"
-    assert row["service_timeout_limit_sec"] == pytest.approx(0.01)
-    assert row["service_match_elapsed_sec"] >= 0.01
+    assert row["service_timeout_limit_sec"] == pytest.approx(0.05)
+    assert row["service_match_elapsed_sec"] >= 0.03
     assert row["fallback_to_dinov2_after_timeout"] is False
     assert row["root_cause"] == "local_refinement_timeout"
 
