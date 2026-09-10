@@ -1,4 +1,4 @@
-# AeroSync
+# Vision
 
 TEKNOFEST **Havacılıkta Yapay Zeka Yarışması** için geliştirilen, hava aracının
 alt-görüş kamerasından gelen görüntüleri işleyerek yarışmanın üç görevini
